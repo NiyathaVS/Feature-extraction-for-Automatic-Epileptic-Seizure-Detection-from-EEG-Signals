@@ -1,0 +1,205 @@
+#**CODE TO MOUNT GOOGLE DRIVE**
+
+from google.colab import drive
+drive.mount('/content/drive')
+
+
+
+#**CODE TO VISUALISE THE HEAD AND TAIL ROWS OF THE FILES**
+import pandas as pd
+# Define the directory path
+Path = 'drive/MyDrive/EEG'
+# Construct the full file path
+file_path = f'{Path}/ch17/chb17a_03.csv_frame1.csv'
+# Read the CSV file using the full file path
+df = pd.read_csv(file_path)
+print("\nHEAD")
+# Print the DataFrame
+print(df.head(2))
+print("\nTail")
+print(df.tail(2)) #specify the number of rows to be visualised
+
+
+#**CODE FOR ICTAL CONVERSION**
+import os
+import pandas as pd
+
+# Define the folder containing the files
+folder_path = 'drive/MyDrive/EEG/ch04/'
+
+# List of file names with seizure window information
+file_list = [
+    {"file_name": "chb04_05.csv", "start": 7804, "end": 7853},
+    {"file_name": "chb04_08.csv", "start": 6446, "end": 6557},
+    {"file_name": "chb04_28.csv", "start": 1679, "end": 1781},
+    {"file_name": "chb04_28.csv", "start": 3782, "end": 3898},
+]
+
+# Path of the output CSV file
+output_csv = f'{folder_path}chb04_ictal.csv'
+
+# Loop through each file information dictionary in the list
+for file_info in file_list:
+  file_name = file_info["file_name"]
+  file_path = os.path.join(folder_path, file_name)
+  print(f"Processing file: {file_name}")
+
+  # Read the CSV file using pandas
+  df = pd.read_csv(file_path)
+
+  # Extract start and end times from seizure window information
+  start_time = file_info["start"]
+  end_time = file_info["end"]
+  print(f"Seizure window: {start_time} - {end_time} seconds")
+
+  # Convert seconds to timestamps (considering sampling rate of 1 kHz)
+  time_stamps = (df['time'] >= start_time) & (df['time'] <= end_time)
+
+  # Filter the DataFrame based on the time window
+  df_windowed = df[time_stamps]
+
+  # Write directly with column names in to_csv()
+  df_windowed.to_csv(output_csv, mode='a', header=df_windowed.columns, index=False)
+  print(f"Filtered data written to: {output_csv}")
+
+
+
+#**CODE FOR PREICTAL CONVERSION**
+import os
+import pandas as pd
+
+# Define the folder containing the files
+folder_path = 'drive/MyDrive/EEG/ch04/'
+
+# List of file names with seizure window information (assuming "start" key only)
+file_list = [
+    {"file_name": "chb04_05.csv", "start": 7804},
+    {"file_name": "chb04_08.csv", "start": 6446},
+    {"file_name": "chb04_28.csv", "start": 1679},
+    {"file_name": "chb04_28.csv", "start": 3782},
+]
+
+# Dictionary to store the count of occurrences of each file name
+file_counts = {}
+
+# Loop through each file name in the file list
+for index, file_info in enumerate(file_list):
+    file_name = file_info["file_name"]  # Access "file_name" from the dictionary
+    start_time = file_info["start"]
+
+    # Update the count of occurrences for the current file name
+    if file_name not in file_counts:
+        file_counts[file_name] = 1
+    else:
+        file_counts[file_name] += 1
+
+    # Define the output file path based on the current file being processed and its count
+    count = file_counts[file_name]
+    output_csv_frame1 = os.path.join(folder_path, f'{file_name}_frame{count}_1.csv')
+    output_csv_frame2 = os.path.join(folder_path, f'{file_name}_frame{count}_2.csv')
+    output_csv_frame3 = os.path.join(folder_path, f'{file_name}_frame{count}_3.csv')
+
+    # Rest of the code for processing each file
+    file_path = os.path.join(folder_path, file_name)
+    print(f"Processing file: {file_name}")
+
+    df = pd.read_csv(file_path)
+    df['time'] = pd.to_numeric(df['time'])
+
+    gap_start_time = start_time - 10
+    frame1_start_time = gap_start_time - 10
+    frame2_start_time = frame1_start_time - 10
+    frame3_start_time = frame2_start_time - 10
+
+    # Filter data for each frame
+    frame1_data = df[(df['time'] >= frame1_start_time) & (df['time'] < gap_start_time)]
+    frame2_data = df[(df['time'] >= frame2_start_time) & (df['time'] < frame1_start_time)]
+    frame3_data = df[(df['time'] >= frame3_start_time) & (df['time'] < frame2_start_time)]
+
+    # Save each frame to a separate CSV file
+    frame1_data.to_csv(output_csv_frame1, index=False)
+    frame2_data.to_csv(output_csv_frame2, index=False)
+    frame3_data.to_csv(output_csv_frame3, index=False)
+
+    print(f"Frame 1 data written to: {output_csv_frame1}")
+    print(f"Frame 2 data written to: {output_csv_frame2}")
+    print(f"Frame 3 data written to: {output_csv_frame3}")
+
+    print("Processing complete.")
+
+
+
+#**CODE TO CALCULATE RELATIVE ALPHA AND DELTA POWER
+import csv
+from scipy.signal import welch
+import datetime
+
+
+def calculate_relative_band_power(data, column, band_range, fs=256, window='hann', overlap=0.5):
+
+  total_power = 0
+  band_power = 0
+  signal = []
+  start_time = 3742
+  end_time = 3751.996094
+  for row in data:
+    current_time = float(row['time'])  # Assuming 'time' is the column with timestamps
+
+    # Check if within seizure period (remove pre-defined times here)
+    if start_time <= current_time <= end_time:
+      # Within seizure period, accumulate data for Welch's method
+      value = float(row[column])
+      signal.append(value)
+
+  if len(signal) > 0:
+    # Apply Welch's method to calculate PSD (even with negative values)
+    freqs, psd = welch(signal, fs=fs, window=window, noverlap=overlap)
+
+    # Integrate power within the band
+    for i, f in enumerate(freqs):
+      if band_range[0] <= f <= band_range[1]:
+        band_power += abs(psd[i])  # Use absolute value to include negative power
+      total_power += abs(psd[i])  # Use absolute value for total power
+
+    # Calculate relative power within the band
+    if total_power > 0:
+      return band_power / total_power
+    else:
+      return None  # No data within seizure period for this electrode
+  else:
+    return None  # No data within seizure period for this electrode
+
+
+def main():
+  # Replace 'drive/MyDrive/EEG' with the actual path to your EEG data directory
+  Path = 'drive/MyDrive/EEG'
+
+
+  # Open and process the CSV file
+  with open(f'{Path}/ch04/chb04_28.csv_frame2_3.csv', newline='') as csvfile:
+    reader = csv.DictReader(csvfile)
+    data = list(reader)
+
+  # Get all column names except 'time'
+  electrode_columns = [col for col in reader.fieldnames if col not in ['time']]
+
+  # Define beta wave frequency range
+  alpha_range=(8,12)
+  delta_range = (0.5,4)  # Beta waves typically range from 13-30 Hz
+
+  # Loop through each electrode and calculate relative beta power
+  print("\nALPHA")
+  for column in electrode_columns:
+    relative_alpha_power = calculate_relative_band_power(data, column, alpha_range)
+
+    if relative_alpha_power is not None:
+      print(f"{column}: {relative_alpha_power:.2f}")
+
+  print("\nDELTA")
+  for column in electrode_columns:
+    relative_delta_power = calculate_relative_band_power(data, column, delta_range)
+    if relative_delta_power is not None:
+      print(f"{column}: {relative_delta_power:.2f}")
+if __name__ == "__main__":
+  main()
+
